@@ -1,0 +1,143 @@
+---
+title: "DTSA5301_wk3_shootingProj"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+####Note: 
+In order to knit this Rmd file, you will need the following libraries installed:
+
+* tidyverse
+* lubridate
+
+## NYPD Shooting Incident Data (Historic)  
+
+About dataset (from [source](https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic)):
+
+"List of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year.
+
+This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year. This data is manually extracted every quarter and reviewed by the Office of Management Analysis and Planning before being posted on the NYPD website. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, information related to suspect and victim demographics is also included. This data can be used by the public to explore the nature of shooting/criminal activity. Please refer to the attached data footnotes for additional information about this dataset."
+
+***
+
+### 1. Import Data  
+Read in the NYC shooting data from .csv:
+```{r import-data}
+shooting_data <- read.csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+
+#inspect raw data
+head(shooting_data)
+```
+
+***
+
+### 2. Tidy and Transform Data  
+
+Clean up data:
+* remove x/y coord and lat/long
+```{r clean-data}
+shooting_data <- shooting_data %>%
+  select(INCIDENT_KEY:VIC_RACE) %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+```
+
+Get summary of dataset (shooting_data):
+```{r get-raw-data-summary}
+summary(shooting_data)
+```
+
+***
+
+### 3. Visualize and Analyze Data  
+
+There are many questions we could ask regarding this dataset. 
+
+I'm going to start by asking if the rate of shootings has changed year over year.
+```{r vis-by-year}
+shooting_data <- shooting_data %>%
+  mutate(date_as_year = year(OCCUR_DATE))
+
+shooting_data_by_year <- shooting_data %>%
+  count(date_as_year)
+
+ggplot(shooting_data_by_year, aes(x = date_as_year, y = n))  +
+  geom_point(color = "steelblue") +
+  geom_line(color = "steelblue") +
+  ylim(0,2100) +
+  labs(title = "NYC Shootings by Year (2006-2020)", y = "Number of Shootings", x = "Year") 
+```
+Analysis of the year over year shooting rates show a steady decline in NYC shootings from 2006 to 2019, then a sudden spike in shootings in 2020.
+
+***
+
+**Create Model**  
+To objectively highlight the spike in shootings in 2020, and to mitigate any potential personal bias from the conclusions drawn, I will create a model so we can compare predicted vs actual.
+
+```{r mod-by-year}
+#create linear model
+mod_by_year <- lm(n ~ date_as_year, data = shooting_data_by_year)
+
+#create new dataset with predicted values for each year
+shooting_data_by_year_pred <- shooting_data_by_year %>% mutate(pred = predict(mod_by_year))
+
+#show prediction data
+shooting_data_by_year_pred
+
+#plot actual shootings vs predicted shootings
+ggplot(shooting_data_by_year_pred, aes(x = date_as_year))  +
+  geom_point(aes(y = n), color = "steelblue") +
+  geom_line(aes(y = n), color = "steelblue") +
+  geom_point(aes(y = pred), color = "darkred") +
+  geom_line(aes(y = pred), color = "darkred") +
+  ylim(0,2100) +
+  labs(title = "NYC Shootings by Year (2006-2020) - Actual and Predicted", y = "Number of Shootings", x = "Year")
+```
+The actual (blue) vs predicted (red) values backup the previous conclusion citing that there was a downward trend in shooting from 2006 to 2019 with an unexpected increase in 2020.
+
+***
+
+The second visualization I'm going to look at is shootings by borough. 
+```{r vis-by-boro}
+shooting_data_by_boro <- shooting_data %>%
+  count(BORO)
+
+ggplot(shooting_data_by_boro, aes(x = BORO, y = n)) +
+  geom_bar(stat = "identity", color = "steelblue", fill = "steelblue") +
+  labs(title = "NYC Shootings by Borough (2006-2020)", y = "Number of Shootings", x = "Borough")
+```
+Analysis of the shootings by borough shows a large disparity in the number of shootings per borough, with Brooklyn clearly having the most followed by the Bronx. Staten Island had the least amount of shootings between 2006 and 2020.
+
+Looking at these two visualizations leads me to question if the trend seen in the first graph is present for each borough.
+
+```{r vis-by-year-boro}
+shooting_data_by_year_boro <- shooting_data %>%
+  count(date_as_year, BORO)
+
+ggplot(shooting_data_by_year_boro, aes(x = date_as_year, y = n))  +
+  geom_point(aes(x = date_as_year, y = n, colour = BORO)) +
+  geom_line(aes(group = BORO, colour = BORO)) +
+  ylim(0,900) +
+  labs(title = "NYC Shootings by Year and Borough(2006-2020)", y = "Number of Shootings", x = "Year")
+```
+
+Separating shootings by year and borough shows that the overall trend of steady decline in number of shootings from 2006 to 2019 with a jump in 2020 was present across the 5 boroughs of NYC.
+
+***
+
+### 4. Identify Bias
+
+The potential for personal bias affecting the analysis of a dataset like this NYC shooting data is extremely high. Themes such as **race** (PERP_RACE and VIC_RACE), **sex** (PERP_SEX, VIC_SEX), **age** (PERP_AGE_GROUP, VIC_AGE_GROUP) and **class and money** (BORO - i.e. Manhattan and Statten Island vs Brooklyn and the Bronx) all have the potential to come into play.
+
+The analysis the I chose to perform (shootings year over year and shootings by borough) did not dig deeply into the more obvious sources of potential bias listed above. I can see, however, that even with these relatively objective analysis, a personal bias can come into play.
+
+For instance, 2020 was a very politically volatile time in the US. With the first analysis, NYC Shooting by Year (2006-2020), one could make the argument that an analysis showing a general trend of decreasing violence over a 14 year period with a sharp increase in the final year (2020) could be driven by a political bias in one direction or the other. For this analysis, including a model to highlight the difference of actual vs expected is helpful in showing objectivity in the conclusion, thus minimizing the potential for personal bias.
